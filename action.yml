@@ -1,0 +1,76 @@
+name: 'Connect Tailscale'
+description: 'Connect your GitHub Action workflow to Tailscale'
+branding:
+  icon: 'arrow-right-circle'
+  color: 'gray-dark'
+inputs:
+  authkey:
+    description: 'Your Tailscale authentication key, from the admin panel.'
+    required: false
+  tags:
+    description: 'Comma separated list of Tags to be applied to nodes. The OAuth client must have permission to apply these tags.'
+    required: false
+  args:
+    description: 'Optional additional arguments to `tailscale up`'
+    required: false
+    default: ''
+  tailscaled-args:
+    description: 'Optional additional arguments to `tailscaled`'
+    required: false
+    default: ''
+  hostname:
+    description: 'Fixed hostname to use.'
+    required: false
+    default: ''
+  statedir:
+    description: 'Optional state directory to use (if unset, memory state is used)'
+    required: false
+    default: ''    
+  timeout:
+    description: 'Timeout for `tailscale up`'
+    required: false
+    default: '2m'
+runs:
+    using: 'composite'
+    steps:
+      - name: Check Runner OS
+        if: ${{ runner.os != 'Linux' }}
+        shell: bash
+        run: |
+          echo "::error title=⛔ error hint::Support Linux Only"
+          exit 1
+      - name: Check Auth Info Empty
+        if: ${{ inputs.authkey == '' }}
+        shell: bash
+        run: |
+          echo "::error title=⛔ error hint::Authkey is empty"
+          exit 1
+      - name: Start Tailscale Daemon
+        shell: bash
+        env:
+          ADDITIONAL_DAEMON_ARGS: ${{ inputs.tailscaled-args }}
+          STATEDIR: ${{ inputs.statedir }}
+        run: |
+          if [ "$STATEDIR" == "" ]; then
+            STATE_ARGS="--state=mem:"
+          else
+            STATE_ARGS="--statedir=${STATEDIR}"
+            mkdir -p "$STATEDIR"
+          fi
+          sudo -E tailscaled ${STATE_ARGS} ${ADDITIONAL_DAEMON_ARGS} 2>~/tailscaled.log &
+          # And check that tailscaled came up. The CLI will block for a bit waiting
+          # for it. And --json will make it exit with status 0 even if we're logged
+          # out (as we will be). Without --json it returns an error if we're not up.
+          sudo -E tailscale status --json >/dev/null
+      - name: Connect to Tailscale
+        shell: bash
+        env:
+          ADDITIONAL_ARGS: ${{ inputs.args }}
+          HOSTNAME: ${{ inputs.hostname }}
+          TAILSCALE_AUTHKEY: ${{ inputs.authkey }}
+          TIMEOUT: ${{ inputs.timeout }}
+        run: |
+          if [ -z "${HOSTNAME}" ]; then
+            HOSTNAME="github-$(cat /etc/hostname)"
+          fi
+          timeout --verbose --kill-after=1s ${TIMEOUT} sudo -E tailscale up ${TAGS_ARG} --authkey=${TAILSCALE_AUTHKEY} --hostname=${HOSTNAME} --accept-routes ${ADDITIONAL_ARGS}

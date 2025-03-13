@@ -1,0 +1,30 @@
+name: tailscale
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: 
+      image: ghcr.io/gbraad-actions/fedora:stable
+      options: --privileged
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Tailscale Action
+        uses: ./
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Check for connectivity
+        run:
+          tailscale status | grep github
